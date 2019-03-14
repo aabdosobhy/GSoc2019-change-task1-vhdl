@@ -84,7 +84,7 @@ end component;
 
 signal select_out: std_logic_vector (1 downto 0);
 signal en_write_OutReg : std_logic ;
-signal shift_word_out , out_Reg_shift : std_logic_vector (parallelSize-1 downto 0);
+signal shift_word_in , out_Reg_shift : std_logic_vector (parallelSize-1 downto 0);
 signal rst_counter : std_logic;
 signal enb_reg_select: std_logic;
 signal data_ready_out: std_logic;
@@ -104,20 +104,9 @@ signal data_12b: std_logic_vector (10 downto 0 );
 
 begin 
 
---
---mux_select_shift: mux4_1 
---	generic map ( 
---		data_size=> parallelSize) 
---	port map (
---		input1 => data_8b,
---		input2 => data_10b,
---		input3 => data_12b,
---		input4 => data_12b,
---             	selection => select_out,
---  		output => mux_word_out );
 
 
-Reg_select : nRegister 
+Reg_select : nRegister_F
 	generic map(
 		size => 2) 
 	port map (
@@ -127,17 +116,17 @@ Reg_select : nRegister
 		d => bitslip,
 		q => select_out );
 
-Reg_shift : nRegister_F 
+Reg_shift : nRegister
 	generic map(
 		size => parallelSize) 
 	port map (
 		clk => clk,
 		enb => '1',
 		rst => start,
-		d => shift_word_out,
+		d => shift_word_in,
 		q => out_Reg_shift );
 
-Reg_out	: nRegister 
+Reg_out	: nRegister_F
 	generic map (
 		size => parallelSize)
 	port map(
@@ -172,14 +161,16 @@ counter_4b_R : counter_R
 	begin 
 		if (falling_edge(clk)) then 
 
-			if select_out = "00" and  start='0' then 
-				shift_word_out<= serialBit & data_8b &"0000";
+			if select_out = "00"  then 
+				shift_word_in<= serialBit & data_8b &"0000";
 
-			elsif select_out = "01" and start='0' then 
-				shift_word_out<= serialBit & data_10b &"00";
+			elsif select_out = "01"  then 
+				shift_word_in<= serialBit & data_10b &"00";
 
-			elsif select_out(1) = '1' and start='0' then 
-				shift_word_out<= serialBit & data_12b ;
+			elsif select_out(1) = '1'  then 
+				shift_word_in<= serialBit & data_12b ;
+			elsif start ='1' then 
+				shift_word_in <= (others=>'0');
 
 			end if ;
 
@@ -193,12 +184,12 @@ counter_4b_R : counter_R
 count_8  <=  count(3) and (not count(2)) and (not count(1)) and (not count(0)) and (not select_out(1)) and (not select_out(0));
 count_10 <= count(3) and (not count(2)) and  count(1) and (not count(0)) and (not select_out(1)) and select_out(0);
 count_12 <= count(3) and count(2) and not (count(1)) and (not count(0)) and select_out(1);
-count_0  <= (not count(3)) and (not count(2)) and (not count(1)) and (not count(0));
+count_0  <=  (not count(3)) and (not count(2)) and (not count(1)) and (not count(0));
 countR_0 <=(not count_rising(3)) and (not count_rising(2)) and (not count_rising(1)) and (not count_rising(0));
 
 data_ready_out	 <= count_8 or count_10 or count_12 ;
 
-enb_reg_select <=  data_ready_out or start;
+enb_reg_select <=  data_ready_out or start or count_0;
 
 rst_counter <=countR_0 ;
 
@@ -207,6 +198,8 @@ rst_counter_rising <= count_8 or count_10 or count_12 ;
 data_8b  <= out_Reg_shift(11 downto 5);
 data_10b <= out_Reg_shift(11 downto 3);
 data_12b <= out_Reg_shift(11 downto 1);
+
+en_write_OutReg <= countR_0;
 
 
 end ser2par_A;
