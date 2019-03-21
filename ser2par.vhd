@@ -88,6 +88,7 @@ begin
 
 bitslip_reg : Register_1b port map (clk,counter8_bits(7),start,bitslip,bitSlip_save);    
 word_size : nRegister generic map (size=>2) port map (clk,counter8_bits(7),'0',word_size_select, word_size_save);
+
 counter8: counter_shift generic map (size=> 8) port map  (clk, repeatCounter , counter8_bits);
 counter9: counter_shift generic map (size=> 9) port map  (clk, repeatCounter , counter9_bits);
 counter10: counter_shift generic map (size=> 10) port map  (clk, repeatCounter , counter10_bits);
@@ -96,12 +97,12 @@ counter12: counter_shift generic map (size=> 12) port map  (clk, repeatCounter ,
 counter13: counter_shift generic map (size=> 13) port map  (clk, repeatCounter , counter13_bits);
 
 Serial_shift: Shift_Register generic map (size=> 12) port map  (clk, start,serialBit , shiftbits);
+
 piplinedata : nRegister generic map (size => 6) port map ( clk ,'1', start,pipeline_in, pipeline_out);
+
 data_readyR: Register_1b port map(clk ,'1',start,repeatCounter,dataready); 
 
 finalData :  nRegister generic map (size => 12) port map ( clk ,dataready,start,word_formation, parallelOut);
-
-
 
 pipeline_in(5) <=(counter8_bits(1) and not( word_size_save(0)) and not ( word_size_save(1)) and not (bitSlip_save));
 pipeline_in(4) <=(counter9_bits(1) and not( word_size_save(0)) and not ( word_size_save(1)) and bitSlip_save)  ;
@@ -114,15 +115,12 @@ pipeline_in(0) <=(counter13_bits(1) and  ( word_size_save(1)) and (bitSlip_save)
 repeatCounter <= pipeline_out(5) or pipeline_out(4)or pipeline_out(3) 
 		or pipeline_out(2) or pipeline_out(1) or pipeline_out(0) or start;
 
-
-
 bit3_out <= shiftbits(3) and (word_size_save(1) or word_size_save(0)); 
 bit2_out <= shiftbits(2) and (word_size_save(1) or word_size_save(0));
 bit1_out <= shiftbits(1) and word_size_save(1);
 bit0_out <=shiftbits(0) and word_size_save(1);
 
 word_formation<=shiftbits(11 downto 4) & bit3_out & bit2_out & bit1_out & bit0_out;
-
 
 end ser2par_A;
  
