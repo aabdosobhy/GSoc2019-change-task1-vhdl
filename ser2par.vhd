@@ -9,7 +9,7 @@ entity ser2par is
 		start : in std_logic;					     -- start signal 
 		serialBit :in std_logic ;				     -- serial bit from the serial line 
 		bitslip: in std_logic;					     -- input bitslip 
-		frame_size_select :in std_logic_vector (1 downto 0);	     -- adjusted output word size
+		word_size_select :in std_logic_vector (1 downto 0);	     -- adjusted output word size
 		parallelOut : out std_logic_vector (parallelSize-1 downto 0) -- output parallel word
 	);    
 
@@ -69,7 +69,7 @@ end component;
 
 
 signal bitSlip_save:std_logic;				-- register to save the bitslip signal 
-signal frame_size_save : std_logic_vector (1 downto 0);	-- register to save the parallel word size 
+signal word_size_save : std_logic_vector (1 downto 0);	-- register to save the parallel word size 
 signal repeatCounter : std_logic;			-- reset all the counters to 100...0 to repeat the shifting again for the new word
 signal dataready: std_logic;				-- enable bit to save the word constructed in the finalData register 
 signal counter8_bits: std_logic_vector(7 downto 0 );	-- shift register of 8-bits acts as a counter for the word-size 8 and no bitslip 
@@ -87,7 +87,7 @@ begin
 
 
 bitslip_reg : Register_1b port map (clk,counter8_bits(7),start,bitslip,bitSlip_save);    
-frame_size : nRegister generic map (size=>2) port map (clk,counter8_bits(7),'0',frame_size_select, frame_size_save);
+word_size : nRegister generic map (size=>2) port map (clk,counter8_bits(7),'0',word_size_select, word_size_save);
 counter8: counter_shift generic map (size=> 8) port map  (clk, repeatCounter , counter8_bits);
 counter9: counter_shift generic map (size=> 9) port map  (clk, repeatCounter , counter9_bits);
 counter10: counter_shift generic map (size=> 10) port map  (clk, repeatCounter , counter10_bits);
@@ -103,12 +103,12 @@ finalData :  nRegister generic map (size => 12) port map ( clk ,dataready,start,
 
 
 
-pipeline_in(5) <=(counter8_bits(1) and not( frame_size_save(0)) and not ( frame_size_save(1)) and not (bitSlip_save));
-pipeline_in(4) <=(counter9_bits(1) and not( frame_size_save(0)) and not ( frame_size_save(1)) and bitSlip_save)  ;
-pipeline_in(3) <=(counter10_bits(1) and  frame_size_save(0) and not ( frame_size_save(1)) and not (bitSlip_save)) ;
-pipeline_in(2) <=(counter11_bits(1) and  frame_size_save(0) and not ( frame_size_save(1)) and (bitSlip_save)) ;
-pipeline_in(1) <=(counter12_bits(1) and  ( frame_size_save(1)) and not (bitSlip_save)) ;
-pipeline_in(0) <=(counter13_bits(1) and  ( frame_size_save(1)) and (bitSlip_save)) ;
+pipeline_in(5) <=(counter8_bits(1) and not( word_size_save(0)) and not ( word_size_save(1)) and not (bitSlip_save));
+pipeline_in(4) <=(counter9_bits(1) and not( word_size_save(0)) and not ( word_size_save(1)) and bitSlip_save)  ;
+pipeline_in(3) <=(counter10_bits(1) and  word_size_save(0) and not ( word_size_save(1)) and not (bitSlip_save)) ;
+pipeline_in(2) <=(counter11_bits(1) and  word_size_save(0) and not ( word_size_save(1)) and (bitSlip_save)) ;
+pipeline_in(1) <=(counter12_bits(1) and  ( word_size_save(1)) and not (bitSlip_save)) ;
+pipeline_in(0) <=(counter13_bits(1) and  ( word_size_save(1)) and (bitSlip_save)) ;
 
 
 repeatCounter <= pipeline_out(5) or pipeline_out(4)or pipeline_out(3) 
@@ -116,10 +116,10 @@ repeatCounter <= pipeline_out(5) or pipeline_out(4)or pipeline_out(3)
 
 
 
-bit3_out <= shiftbits(3) and (frame_size_save(1) or frame_size_save(0)); 
-bit2_out <= shiftbits(2) and (frame_size_save(1) or frame_size_save(0));
-bit1_out <= shiftbits(1) and frame_size_save(1);
-bit0_out <=shiftbits(0) and frame_size_save(1);
+bit3_out <= shiftbits(3) and (word_size_save(1) or word_size_save(0)); 
+bit2_out <= shiftbits(2) and (word_size_save(1) or word_size_save(0));
+bit1_out <= shiftbits(1) and word_size_save(1);
+bit0_out <=shiftbits(0) and word_size_save(1);
 
 word_formation<=shiftbits(11 downto 4) & bit3_out & bit2_out & bit1_out & bit0_out;
 
