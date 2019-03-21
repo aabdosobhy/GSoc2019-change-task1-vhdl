@@ -10,7 +10,6 @@ entity ser2par is
 		serialBit :in std_logic ;				     -- serial bit from the serial line 
 		bitslip: in std_logic;					     -- input bitslip 
 		frame_size_select :in std_logic_vector (1 downto 0);	     -- adjusted output word size
-		data_ready_parallel : out std_logic ;			     -- data is ready at parallelOut to capture
 		parallelOut : out std_logic_vector (parallelSize-1 downto 0) -- output parallel word
 	);    
 
@@ -18,22 +17,19 @@ end entity ser2par;
 
 
 architecture ser2par_A of ser2par is
-	
 
-component nRegister_F is				    -- generic register changes data on the falling edge 
-	generic (
-	 	size : integer := 12
-	);
-	port( 
-		clk :in std_logic;			    -- input clock 
-		enb : in std_logic;			    -- input enable write 
-		rst :in std_logic;			    -- input reset 
-		d : in std_logic_vector(size-1 downto 0);   -- input data to register
-		q : out std_logic_vector(size-1 downto 0)   -- output data of the register 
-	); 
+component Register_1b is
+    
+    port( 
+        clk :in std_logic;              -- input clock 
+        enb : in std_logic;             -- input enable write 
+        rst :in std_logic;              -- input reset 
+        d : in std_logic;               -- input data to register
+        q : out std_logic               -- output data of the register 
+    ); 
 end component ;
 
-component nRegister is					    -- generic register changes data on the Rising edge 
+component nRegister is
 	generic (
 	 	size : integer := 12
 	);
@@ -43,98 +39,92 @@ component nRegister is					    -- generic register changes data on the Rising ed
 		rst :in std_logic;			    -- input reset 
 		d : in std_logic_vector(size-1 downto 0);   -- input data to register
 		q : out std_logic_vector(size-1 downto 0)   -- output data of the register 
-	);  
-end component;
-
-component counter_f is
-  	generic (
-		n:integer :=4
 	); 
-  	Port ( 
-		clk: in std_logic;			   	-- input clock
-		start: in std_logic;				-- input start system 
-		rst : in std_logic;			   	-- counter Reset  
-   		count : out std_logic_vector( n-1 downto 0 )	-- counter output 
+end component;
+
+component Shift_Register is
+	generic (
+	 	size : integer := 12
 	);
+	port( 
+		clk :in std_logic;			    -- input clock 
+		rst :in std_logic;			    -- input reset 
+		d : in std_logic;			    -- input shift data
+		q : out std_logic_vector(size-1 downto 0)   -- output data of the register 
+	); 
+end component;
+
+component counter_shift is
+	generic (
+	 	size : integer := 12
+	);
+	port( 
+		clk :in std_logic;			    -- input clock 
+		rst :in std_logic;			    -- input reset 
+		q : out std_logic_vector(size-1 downto 0)   -- output data of the register 
+	); 
 end component;
 
 
-signal rst_counter : std_logic;			-- reset the counter to start count from 1 to (8/10/12)
-signal enb_datasize_R: std_logic;		-- enable the select regester to save the value of the dataframe size  
-signal data_ready_out: std_logic;		-- data ready flag to capture the parallel data word
-signal count_8 : std_logic;			-- when the counter counts 8 "1000" and the frame size 8
-signal count_10 : std_logic;			-- when the counter counts 10 "1010" and the frame size 10
-signal count_12 : std_logic;			-- when the counter counts 12 "1100" and the frame size 12
-signal count_0 : std_logic;			-- when the counter counts 0 "0000"
-signal count_1 : std_logic;			-- when the counter counts 1 "0001"
-signal frame_size: std_logic_vector (1 downto 0);			-- the saved dataframe size 
-signal count : std_logic_vector(3 downto 0);				-- the counter value of the shifted bits 
-signal shift_word_in : std_logic_vector (parallelSize-1 downto 0);	-- input to Reg_shift that shift the data 1 bit based on the dataframe size 
-signal shifted_word: std_logic_vector (parallelSize-1 downto 0);	-- output of Reg_shift the value shifted by the serial bit 
+
+
+signal bitSlip_save:std_logic;				-- register to save the bitslip signal 
+signal frame_size_save : std_logic_vector (1 downto 0);	-- register to save the parallel word size 
+signal repeatCounter : std_logic;			-- reset all the counters to 100...0 to repeat the shifting again for the new word
+signal dataready: std_logic;				-- enable bit to save the word constructed in the finalData register 
+signal counter8_bits: std_logic_vector(7 downto 0 );	-- shift register of 8-bits acts as a counter for the word-size 8 and no bitslip 
+signal counter9_bits: std_logic_vector(8 downto 0 );	-- shift register of 9-bits acts as a counter for the word-size 8 and bitslip  
+signal counter10_bits: std_logic_vector(9 downto 0 );	-- shift register of 10-bits acts as a counter for the word-size 10 and no bitslip 
+signal counter11_bits: std_logic_vector(10 downto 0 );	-- shift register of 11-bits acts as a counter for the word-size 10 and bitslip 
+signal counter12_bits: std_logic_vector(11 downto 0 );	-- shift register of 12-bits acts as a counter for the word-size 12 and no bitslip 
+signal counter13_bits: std_logic_vector(12 downto 0 );	-- shift register of 13-bits acts as a counter for the word-size 12 and bitslip 
+signal shiftbits : std_logic_vector(11 downto 0);	-- shift register of 12-bits that shifts the serial data every clk cycle 
+signal pipeline_in , pipeline_out: std_logic_vector (5 downto 0); -- divide a long path of combinational logic gates by a register 
+signal bit3_out , bit2_out, bit1_out, bit0_out: std_logic;	-- temp signals for masking the LSB of the parallel data 
+signal word_formation : std_logic_vector (11 downto 0);		-- combining the parallel data to be transmit in that signal 
 
 begin 
 
-Reg_select : nRegister
-	generic map(
-		size => 2) 
-	port map (
-		clk => clk,
-		enb => enb_datasize_R,
-		rst => '0',
-		d  => frame_size_select,
-		q => frame_size 
-	);
 
-Reg_shift : nRegister
-	generic map(
-		size => parallelSize) 
-	port map (
-		clk => clk,
-		enb => '1',
-		rst => start,
-		d => shift_word_in,
-		q => shifted_word 
-	);
+bitslip_reg : Register_1b port map (clk,counter8_bits(7),start,bitslip,bitSlip_save);    
+frame_size : nRegister generic map (size=>2) port map (clk,counter8_bits(7),'0',frame_size_select, frame_size_save);
+counter8: counter_shift generic map (size=> 8) port map  (clk, repeatCounter , counter8_bits);
+counter9: counter_shift generic map (size=> 9) port map  (clk, repeatCounter , counter9_bits);
+counter10: counter_shift generic map (size=> 10) port map  (clk, repeatCounter , counter10_bits);
+counter11: counter_shift generic map (size=> 11) port map  (clk, repeatCounter , counter11_bits);
+counter12: counter_shift generic map (size=> 12) port map  (clk, repeatCounter , counter12_bits);
+counter13: counter_shift generic map (size=> 13) port map  (clk, repeatCounter , counter13_bits);
 
-counter_4b_f : counter_f 
-  	generic map (
-		n=>4)
-  	port map ( 
-		clk =>clk,
-		start =>start,
-		rst =>rst_counter,
-   		count =>count 
-	);
+Serial_shift: Shift_Register generic map (size=> 12) port map  (clk, start,serialBit , shiftbits);
+piplinedata : nRegister generic map (size => 6) port map ( clk ,'1', start,pipeline_in, pipeline_out);
+data_readyR: Register_1b port map(clk ,'1',start,repeatCounter,dataready); 
 
-	process (frame_size,serialBit,shifted_word)
-	begin 
-			shift_word_in<= (others=>'0');
-			if frame_size = "00"  then 
-				shift_word_in<= serialBit & shifted_word(11 downto 5) &"0000";
-			elsif frame_size = "01"  then 
-				shift_word_in<= serialBit & shifted_word(11 downto 3) &"00";
-			elsif frame_size = "10" or frame_size = "11"   then 
-				shift_word_in<= serialBit & shifted_word(11 downto 1) ;
-			end if ;
+finalData :  nRegister generic map (size => 12) port map ( clk ,dataready,start,word_formation, parallelOut);
 
-	end process;
-	
-count_8  <=  count(3) and not(count(2) or count(1) or count(0) or frame_size(1) or frame_size(0));
-count_10 <= count(3) and  count(1) and frame_size(0) and not( count(2) or count(0) or frame_size(1));
-count_12 <= count(3) and count(2) and not(count(1) or count(0)) and frame_size(1);
-count_0  <=  not( count(3) or  count(2) or  count(1) or  count(0));
-count_1 <= not(count(3) or count(2) or count(1)) and count(0);
 
-data_ready_out <= count_8 or count_10 or count_12 ;	-- data ready is when the count reaches the size of the word size 
-enb_datasize_R <= start or count_0 or count_1;		-- enable the dataframe size to read at the begining of every 
-							-- new word when count=1, if it changed twice inside one frame 
-							-- the last frame size will capture in the next word 
-rst_counter <= data_ready_out ;				-- reset the counter when the data is ready based on the size of the frame 
-data_ready_parallel <= data_ready_out ;			-- parallel word is constructed capture the valid word 
-parallelOut <= shifted_word;				-- out to parallel line 
+
+pipeline_in(5) <=(counter8_bits(1) and not( frame_size_save(0)) and not ( frame_size_save(1)) and not (bitSlip_save));
+pipeline_in(4) <=(counter9_bits(1) and not( frame_size_save(0)) and not ( frame_size_save(1)) and bitSlip_save)  ;
+pipeline_in(3) <=(counter10_bits(1) and  frame_size_save(0) and not ( frame_size_save(1)) and not (bitSlip_save)) ;
+pipeline_in(2) <=(counter11_bits(1) and  frame_size_save(0) and not ( frame_size_save(1)) and (bitSlip_save)) ;
+pipeline_in(1) <=(counter12_bits(1) and  ( frame_size_save(1)) and not (bitSlip_save)) ;
+pipeline_in(0) <=(counter13_bits(1) and  ( frame_size_save(1)) and (bitSlip_save)) ;
+
+
+repeatCounter <= pipeline_out(5) or pipeline_out(4)or pipeline_out(3) 
+		or pipeline_out(2) or pipeline_out(1) or pipeline_out(0) or start;
+
+
+
+bit3_out <= shiftbits(3) and (frame_size_save(1) or frame_size_save(0)); 
+bit2_out <= shiftbits(2) and (frame_size_save(1) or frame_size_save(0));
+bit1_out <= shiftbits(1) and frame_size_save(1);
+bit0_out <=shiftbits(0) and frame_size_save(1);
+
+word_formation<=shiftbits(11 downto 4) & bit3_out & bit2_out & bit1_out & bit0_out;
 
 
 end ser2par_A;
-
+ 
 
 
