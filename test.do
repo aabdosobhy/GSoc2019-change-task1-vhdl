@@ -95,6 +95,7 @@ run
 run
 run
 run
+run
 force -freeze sim:/ser2par/serial_bit 1 0
 run
 run
